@@ -2,4 +2,35 @@
 *.env
 *.env
 .env
-**/.env
+**/.env     
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual env
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+.oxlintrc.json
+
+# Personal / financial documents — never commit
+*.pdf
+
+# Eval run artifacts (regenerable) — keep scripts, case definitions, and
+# the .xlsx reports; drop raw per-run logs and intermediate JSON.
+eval/logs/
+eval/cases2_logs/
+eval/cases3_logs/
+eval/runs.json
+eval/cases2_runs.json
+eval/cases3_runs.json
+eval/*.out

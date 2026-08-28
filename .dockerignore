@@ -1,0 +1,41 @@
+# Repo-root .dockerignore — applies to the agent-service build, whose
+# build context is the whole repo root (so it can COPY both agentops-sdk
+# and github-agent). Keep secrets and heavy/irrelevant dirs out of the
+# image and the build context upload.
+
+# Secrets
+.env
+**/.env
+
+# Python caches / venvs
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# The agent's local agentops memory / scratch (not needed in the image)
+github-agent/.github_agent_memory.json
+
+# Big binary junk that lives in github-agent/
+github-agent/*.pdf
+
+# Stale setuptools build artifacts (can confuse non-editable installs)
+github-agent/build/
+**/*.egg-info/
+
+# Node / other services not used by the agent image
+dashboard/
+node_modules/
+**/node_modules/
+
+# VCS + editor + OS clutter
+.git/
+.github/
+.DS_Store
+
+# Docs + eval harness (not needed at runtime)
+eval/
+*.md
+!agentops-sdk/README.md
+!github-agent/README.md

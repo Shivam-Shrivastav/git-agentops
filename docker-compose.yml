@@ -1,0 +1,78 @@
+# AgentOps — full stack, one command:
+#   docker compose up --build
+#
+# Brings up PostgreSQL + Redis + ingestion-api + worker + dashboard.
+# The Postgres container auto-initialises the schema from db/init.sql
+# on first boot (mounted into /docker-entrypoint-initdb.d/).
+#
+# After start:
+#   ingestion-api  ->  http://localhost:8000   (REST API, /health, /events, /traces, /analytics)
+#   dashboard      ->  http://localhost:5173   (React UI)
+#   postgres       ->  localhost:5432
+#   redis          ->  localhost:6379
+#
+# The dashboard talks to the API at http://localhost:8000 from the
+# *browser*, so the ingestion-api port must stay mapped to the host.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentops
+      POSTGRES_PASSWORD: agentops
+      POSTGRES_DB: agentops
+    # No host port mapping: the API/worker reach it over the compose
+    # network as `db`. This avoids clashes with a host postgres on 5432.
+    # To inspect from the host:  docker compose exec db psql -U agentops -d agentops
+    volumes:
+      - agentops-db:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentops -d agentops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # No host port mapping: the API/worker reach it over the compose
+    # network as `redis`. This avoids clashes with a host redis on 6379.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingestion-api:
+    build: ./ingestion-api
+    environment:
+      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./worker
+    environment:
+      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "5173:5173"
+    depends_on:
+      - ingestion-api
+
+volumes:
+  agentops-db:

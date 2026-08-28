@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentops"
+version = "0.1.0"
+description = "Lightweight AgentOps SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.9.0",
+    "requests>=2.32.0",
+]
+authors = [
+  { name = "Shivam Shrivastava" }
+]
+
+[tool.setuptools]   
+packages = ["agentops"]
+
+[project.scripts]
+github-agent = "github_agent.cli:main"

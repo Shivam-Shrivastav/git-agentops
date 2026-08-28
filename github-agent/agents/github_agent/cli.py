@@ -119,7 +119,7 @@ def main() -> None:
     clarification_round = 0
 
     while True:
-        result = agent.run(task_text)
+        result = agent.run(task_text, user_query=args.task)
         if not result.get("needs_input"):
             break
 

@@ -1,0 +1,17 @@
+# Local prod-test override.
+#
+# Stacks on top of docker-compose.prod.yml to serve over plain HTTP on
+# :80 (the real Caddyfile does HTTPS on a domain, which needs DNS):
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.local.yml up -d --build
+#
+# Only the caddy service differs: it mounts Caddyfile.local (HTTP, no TLS,
+# same basicauth + routing). Everything else (db, redis, ingestion-api,
+# worker, dashboard, agent-service) is identical to production.
+
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config

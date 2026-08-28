@@ -1,0 +1,35 @@
+# Home edge behind a Cloudflare Tunnel.
+#
+# Cloudflare terminates TLS at its edge, so Caddy serves PLAIN HTTP here
+# (no auto-HTTPS — the tunnel carries only outbound traffic from this
+# machine; there's no inbound port for Let's Encrypt to validate anyway).
+# basic_auth still gates the site using AUTH_USER / AUTH_HASH from .env.
+#
+# Routing is identical to the prod Caddyfile:
+#   /api/*   -> ingestion-api:8000  (strip /api)
+#   /agent/* -> agent-service:8001 (strip /agent)
+#   /        -> dashboard:5173
+
+:80 {
+	encode gzip
+
+	basic_auth {
+		{$AUTH_USER} {$AUTH_HASH}
+	}
+
+	@agentApi path /agent/*
+	handle @agentApi {
+		uri strip_prefix /agent
+		reverse_proxy agent-service:8001
+	}
+
+	@api path /api/*
+	handle @api {
+		uri strip_prefix /api
+		reverse_proxy ingestion-api:8000
+	}
+
+	handle {
+		reverse_proxy dashboard:5173
+	}
+}

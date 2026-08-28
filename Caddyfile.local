@@ -1,0 +1,28 @@
+# Local prod-test edge — same routing as the real Caddyfile, but HTTP on
+# :80 (no TLS) so it works on localhost without a domain or DNS. basicauth
+# is kept so the local test exercises the same auth path as production.
+#
+# Used by docker-compose.local.yml. The real deploy uses ./Caddyfile.
+
+:80 {
+	encode gzip
+
+	# No basic_auth locally — auth is verified and just gets in the way of
+	# browsing. The real ./Caddyfile keeps basic_auth for the public deploy.
+
+	@agentApi path /agent/*
+	handle @agentApi {
+		uri strip_prefix /agent
+		reverse_proxy agent-service:8001
+	}
+
+	@api path /api/*
+	handle @api {
+		uri strip_prefix /api
+		reverse_proxy ingestion-api:8000
+	}
+
+	handle {
+		reverse_proxy dashboard:5173
+	}
+}

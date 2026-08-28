@@ -22,9 +22,14 @@ class GitHubClient:
                 "User-Agent": "local-github-agent",
             }
         )
+        # Last response metadata, exposed for tool-span observability.
+        self.last_status: int | None = None
+        self.last_size_bytes: int | None = None
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         response = self.session.request(method=method, url=f"{self.base_url}{path}", timeout=60, **kwargs)
+        self.last_status = response.status_code
+        self.last_size_bytes = len(response.content or b"")
         if response.status_code >= 400:
             try:
                 payload = response.json()
@@ -40,6 +45,8 @@ class GitHubClient:
 
     def _request_text(self, method: str, path: str, **kwargs: Any) -> str:
         response = self.session.request(method=method, url=f"{self.base_url}{path}", timeout=60, **kwargs)
+        self.last_status = response.status_code
+        self.last_size_bytes = len(response.content or b"")
         if response.status_code >= 400:
             try:
                 payload = response.json()

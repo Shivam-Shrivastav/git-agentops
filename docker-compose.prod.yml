@@ -1,0 +1,128 @@
+# AgentOps production stack — public, HTTPS, agent-as-a-service.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Brings up PostgreSQL + Redis + ingestion-api + worker + dashboard +
+# agent-service + Caddy. Only Caddy is exposed to the host (80/443); the
+# API, dashboard, and agent-service are reachable only through Caddy over
+# the internal compose network. Caddy terminates TLS (auto Let's Encrypt
+# for $DOMAIN) and gates everything with HTTP basic auth.
+#
+# Required env (see .env, copied from .env.prod.example):
+#   DOMAIN, AUTH_USER, AUTH_HASH, GITHUB_TOKEN, OPENROUTER_API_KEY
+#
+# Keep docker-compose.yml for local dev (no Caddy, host ports mapped).
+#
+# `name:` pins the compose project so this stack never collides with the
+# local dev stack (which uses the default project name).
+
+name: agentops-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentops
+      POSTGRES_PASSWORD: agentops
+      POSTGRES_DB: agentops
+    volumes:
+      - agentops-db:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentops -d agentops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingestion-api:
+    build: ./ingestion-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      REDIS_URL: redis://redis:6379/0
+    # No host port: only Caddy reaches it over the compose network.
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        # Same-origin API mount; Caddy proxies /api/* -> ingestion-api.
+        VITE_API_BASE_URL: /api
+        # Same-origin agent mount; Caddy proxies /agent/* -> agent-service.
+        VITE_AGENT_BASE_URL: /agent
+    restart: unless-stopped
+    # No host port: only Caddy reaches it.
+    depends_on:
+      - ingestion-api
+
+  agent-service:
+    build:
+      context: .
+      dockerfile: github-agent/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Emit over the internal network, not through Caddy (no auth needed).
+      AGENTOPS_ENDPOINT: http://ingestion-api:8000/events
+      # Sensible defaults; override per-task via .env.
+      AGENT_DESTRUCTIVE_ACTION_POLICY: allow
+      AGENT_DECISION_JUDGE: "1"
+      AGENT_MAX_TOTAL_TOKENS: "40000"
+      AGENT_MAX_STEPS: "6"
+    depends_on:
+      ingestion-api:
+        condition: service_started
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    # Load DOMAIN / AUTH_USER / AUTH_HASH raw from .env. IMPORTANT: do NOT
+    # pass AUTH_HASH through ${AUTH_HASH} interpolation here — compose
+    # would expand the `$2a$…` chars in the bcrypt hash and corrupt it.
+    # env_file sets the values verbatim, which is what Caddy's {$AUTH_HASH}
+    # substitution expects.
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ingestion-api
+      - dashboard
+      - agent-service
+
+volumes:
+  agentops-db:
+  caddy_data:
+  caddy_config:
