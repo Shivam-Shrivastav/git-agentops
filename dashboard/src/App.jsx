@@ -11,6 +11,7 @@ import {
   getFailureAnalytics,
   getTraceError,
   getTraceDecisions,
+  getTraceDecisionQuality,
   getDecisionAnalytics,
   getCostTrend,
 } from "./api";
@@ -45,6 +46,7 @@ function App() {
   const [failures, setFailures] = useState(null);
   const [traceError, setTraceError] = useState(null);
   const [traceDecisions, setTraceDecisions] = useState(null);
+  const [traceQuality, setTraceQuality] = useState(null);
   const [decisionAnalytics, setDecisionAnalytics] = useState(null);
   const [costTrend, setCostTrend] = useState(null);
   const [costTrendBucket, setCostTrendBucket] = useState("15m");
@@ -99,23 +101,26 @@ function App() {
     setTraceTree(null);
     setTraceUsage(null);
     setTraceDecisions(null);
+    setTraceQuality(null);
     setSection("traces");
     setLoading(true);
     setError(null);
 
     try {
-      const [tree, usage, traceErrorData, decisionsData] =
+      const [tree, usage, traceErrorData, decisionsData, qualityData] =
         await Promise.all([
           getTraceTree(traceId),
           getTraceUsage(traceId),
           getTraceError(traceId),
           getTraceDecisions(traceId),
+          getTraceDecisionQuality(traceId),
         ]);
 
       setTraceTree(tree);
       setTraceUsage(usage);
       setTraceError(traceErrorData);
       setTraceDecisions(decisionsData);
+      setTraceQuality(qualityData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -128,6 +133,7 @@ function App() {
     setTraceTree(null);
     setTraceUsage(null);
     setTraceDecisions(null);
+    setTraceQuality(null);
     setError(null);
   }
 
@@ -186,6 +192,7 @@ function App() {
                 usage={traceUsage}
                 error={traceError}
                 decisions={traceDecisions}
+                quality={traceQuality}
                 onBack={handleBack}
               />
             )}
