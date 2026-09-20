@@ -71,21 +71,21 @@ A quick tunnel URL changes on restart. For a **stable** URL
 1. Cloudflare dashboard → **Zero Trust** → **Networks** → **Tunnels** →
    **Create a tunnel** → type **Cloudflared** → name it `agentops`.
 2. Under **Install and run a connector** copy the **token** (long string
-   starting `eyJ...`). This is `CF_TUNNEL_TOKEN`.
+   starting `eyJ...`). This is `TUNNEL_TOKEN`.
 3. **Public Hostname** tab → add a hostname, e.g. `agentops.yourdomain.com`,
-   service `HTTP`, URL `caddy:80`. (cloudflared runs in the compose network,
-   so it resolves `caddy` by service name — no host port needed.)
+   service `HTTP`, URL `http://caddy:80`. (cloudflared runs in the compose
+   network, so it resolves `caddy` by service name — no host port needed.)
 
 ### B2. Put the token in `.env`
 ```
-CF_TUNNEL_TOKEN=eyJ...your-token...
+TUNNEL_TOKEN=eyJ...your-token...
 ```
 
 ### B3. Run with the named-tunnel override
 ```bash
 ./home-down.sh   # stop the quick-tunnel stack first
 docker compose -f docker-compose.prod.yml -f docker-compose.home.yml \
-  -f docker-compose.home.named.yml up -d
+  up -d --force-recreate cloudflared
 ```
 The URL is now stable: `https://agentops.yourdomain.com` (survives restarts;
 Cloudflare DNS points the subdomain at the tunnel automatically).
@@ -132,12 +132,8 @@ Cloudflare DNS points the subdomain at the tunnel automatically).
 `docker-compose.home.yml` (stacked on `docker-compose.prod.yml`):
 - `caddy`: drops host `80/443` mapping (`ports: !reset []`), mounts
   `Caddyfile.home` (HTTP, no TLS — Cloudflare does TLS — + basic_auth).
-- `cloudflared`: quick tunnel, `command: tunnel --url http://caddy:80`,
-  reaches Caddy by service name over the compose network.
-
-`docker-compose.home.named.yml` (optional, for section B): overrides
-cloudflared to `tunnel run` with `TUNNEL_TOKEN`, so it connects to the
-dashboard-managed tunnel with a stable hostname.
+- `cloudflared`: named tunnel, `command: tunnel run` + `TUNNEL_TOKEN`
+  from `.env`, reaches Caddy by service name over the compose network.
 
 The dashboard is built with `VITE_API_BASE_URL=/api` (same-origin), and
 `vite.config.js` sets `server/preview.allowedHosts: true` so the proxied

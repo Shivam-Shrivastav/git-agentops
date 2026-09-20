@@ -5,20 +5,13 @@
 # router port-forwarding. Cloudflare terminates TLS at its edge and tunnels
 # requests to the local Caddy, which serves plain HTTP + basic auth.
 #
-#   ./home-up.sh        # build + start (reads the tunnel URL from logs)
+#   ./home-up.sh        # build + start
 #   ./home-down.sh      # stop
 #
-# Default mode: QUICK TUNNEL — instant, no Cloudflare account or domain
-# needed. cloudflared prints a random https://*.trycloudflare.com URL in
-# its logs (that URL is unguessable and changes on restart).
-#
-# For a STABLE URL on your own domain: set CF_TUNNEL_TOKEN in .env (from
-# the Cloudflare Zero Trust dashboard → Networks → Tunnels → your tunnel →
-# "Install and run a connector" → copy the token), then run:
-#   docker compose -f docker-compose.prod.yml -f docker-compose.home.yml \
-#     up -d cloudflared --force-recreate
-# with the cloudflared command overridden to `tunnel run` (see note in
-# CLOUDFLARE_DEPLOY.md). The quick tunnel is fine to start with.
+# This override switches the prod stack to a NAMED TUNNEL so a custom domain
+# (e.g. https://agentops.website) stays stable across restarts. Set
+# TUNNEL_TOKEN in .env, create a public hostname in Zero Trust pointing
+# to http://caddy:80, and recreate cloudflared.
 
 services:
   caddy:
@@ -32,9 +25,8 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    # Quick tunnel: anonymous, no token. The public URL is printed in the
-    # container logs (grep for trycloudflare). Reaches Caddy by service name
-    # over the internal compose network — no host port needed.
-    command: tunnel --url http://caddy:80
+    env_file: .env
+    # Named tunnel: stable hostname configured in Cloudflare Zero Trust.
+    command: tunnel run
     depends_on:
       - caddy
