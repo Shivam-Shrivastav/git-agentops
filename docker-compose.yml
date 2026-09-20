@@ -1,15 +1,17 @@
 # AgentOps — full stack, one command:
 #   docker compose up --build
 #
-# Brings up PostgreSQL + Redis + ingestion-api + worker + dashboard.
+# Brings up PostgreSQL + Redis + ingestion-api + worker + dashboard +
+# simple-agent-service.
 # The Postgres container auto-initialises the schema from db/init.sql
 # on first boot (mounted into /docker-entrypoint-initdb.d/).
 #
 # After start:
-#   ingestion-api  ->  http://localhost:8000   (REST API, /health, /events, /traces, /analytics)
-#   dashboard      ->  http://localhost:5173   (React UI)
-#   postgres       ->  localhost:5432
-#   redis          ->  localhost:6379
+#   ingestion-api        ->  http://localhost:8000   (REST API)
+#   dashboard            ->  http://localhost:5173   (React UI)
+#   simple-agent-service ->  http://localhost:8002   (lightweight agents API)
+#   postgres             ->  localhost:5432
+#   redis                ->  localhost:6379
 #
 # The dashboard talks to the API at http://localhost:8000 from the
 # *browser*, so the ingestion-api port must stay mapped to the host.
@@ -19,7 +21,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: agentops
-      POSTGRES_PASSWORD: agentops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentops}
       POSTGRES_DB: agentops
     # No host port mapping: the API/worker reach it over the compose
     # network as `db`. This avoids clashes with a host postgres on 5432.
@@ -46,7 +48,7 @@ services:
   ingestion-api:
     build: ./ingestion-api
     environment:
-      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      DATABASE_URL: postgresql://agentops:${POSTGRES_PASSWORD:-agentops}@db:5432/agentops
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -59,7 +61,7 @@ services:
   worker:
     build: ./worker
     environment:
-      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      DATABASE_URL: postgresql://agentops:${POSTGRES_PASSWORD:-agentops}@db:5432/agentops
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
@@ -68,11 +70,42 @@ services:
         condition: service_healthy
 
   dashboard:
-    build: ./dashboard
+    build:
+      context: ./dashboard
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_AGENT_BASE_URL: /agent
+        VITE_SIMPLE_AGENT_BASE_URL: http://localhost:8002
     ports:
       - "5173:5173"
     depends_on:
       - ingestion-api
+      - simple-agent-service
+
+  simple-agent-service:
+    build:
+      context: .
+      dockerfile: simple-agents/Dockerfile
+    environment:
+      # Emit over the internal compose network.
+      AGENTOPS_ENDPOINT: http://ingestion-api:8000/events
+      # Simple-agents can point at any OpenAI-compatible endpoint. By default
+      # we target a local Ollama instance on the Docker host.
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-minimax-m3:cloud}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      # Decision-quality LLM-judge (1 = enabled).
+      AGENT_DECISION_JUDGE: ${AGENT_DECISION_JUDGE:-1}
+      # Keep OpenRouter fallback variables so the same image can be used with
+      # an OpenRouter key without code changes.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+    ports:
+      - "8002:8002"
+    depends_on:
+      ingestion-api:
+        condition: service_started
 
 volumes:
   agentops-db:

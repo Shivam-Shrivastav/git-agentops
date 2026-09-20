@@ -15,6 +15,11 @@ const API_URL =
 const AGENT_URL =
   import.meta.env.VITE_AGENT_BASE_URL ?? "/agent";
 
+// The simple-agents service is mounted at /simple-agent/* by the reverse
+// proxy. It exposes six lightweight agents for the dashboard playground.
+const SIMPLE_AGENT_URL =
+  import.meta.env.VITE_SIMPLE_AGENT_BASE_URL ?? "/simple-agent";
+
 
 // Centralised fetch wrapper. All API calls go through here so there is a
 // single place that knows the base URL, method, and error handling.
@@ -130,7 +135,7 @@ export function evaluateAlerts() {
 }
 
 
-// ---- Agent service (github-agent HTTP wrapper at /agent) -------------
+// ---- Agent service (github-agent HTTP wrapper at /agent) -----------------
 // The browser carries the cached Caddy basic-auth credentials on these
 // same-origin fetches, so no explicit Authorization header is needed.
 
@@ -176,4 +181,53 @@ export function startAgentRun(task, clarifications = []) {
 //   error       -> { run_id, status, error, traceback }
 export function getAgentRun(runId) {
   return agentRequest(`/runs/${encodeURIComponent(runId)}`);
+}
+
+
+// ---- Simple agents service (lightweight playground agents) ---------------
+
+async function simpleAgentRequest(path, { method = "GET", body } = {}) {
+  const init = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${SIMPLE_AGENT_URL}${path}`, init);
+
+  if (!response.ok) {
+    let message = `Simple agent service returned ${response.status}`;
+    try {
+      const responseBody = await response.json();
+      if (responseBody.detail) {
+        message = responseBody.detail;
+      }
+    } catch {
+      // Response wasn't JSON.
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+
+// List available simple agents for the selector.
+export function getSimpleAgents() {
+  return simpleAgentRequest(`/agents`);
+}
+
+
+// Start a simple agent run; returns 202 { run_id, status: "started" }.
+export function startSimpleAgentRun(agent, task, clarifications = []) {
+  return simpleAgentRequest(`/run`, {
+    method: "POST",
+    body: { agent, task, clarifications },
+  });
+}
+
+
+// Poll a simple agent run; same shape as getAgentRun.
+export function getSimpleAgentRun(runId) {
+  return simpleAgentRequest(`/runs/${encodeURIComponent(runId)}`);
 }

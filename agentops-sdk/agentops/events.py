@@ -21,6 +21,9 @@ class EventType(str, Enum):
     LLM_START = "llm.start"
     LLM_END = "llm.end"
 
+    SPAN_START = "span.start"
+    SPAN_END = "span.end"
+
     ERROR = "error"
 
 

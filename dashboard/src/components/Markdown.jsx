@@ -25,6 +25,18 @@ const INLINE_PATTERNS = [
     ),
   },
   {
+    re: /!\[([^\]]*?)\]\(([^)]+?)\)/,
+    wrap: (m, k) => (
+      <img
+        key={k}
+        className="md-img"
+        alt={m[1] || "image"}
+        src={m[2]}
+        style={{ maxWidth: "100%", borderRadius: "4px" }}
+      />
+    ),
+  },
+  {
     re: /\[([^\]]+?)\]\(([^)]+?)\)/,
     wrap: (m, k) => (
       <a

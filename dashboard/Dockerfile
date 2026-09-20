@@ -15,6 +15,13 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ARG VITE_AGENT_BASE_URL=/agent
 ENV VITE_AGENT_BASE_URL=$VITE_AGENT_BASE_URL
 
+# The simple-agents HTTP service is at /simple-agent in production (same
+# origin behind the reverse proxy). Default /simple-agent works for any
+# proxy-mounted deploy; local dev has no simple-agent-service, so those
+# agents are hosted-only.
+ARG VITE_SIMPLE_AGENT_BASE_URL=/simple-agent
+ENV VITE_SIMPLE_AGENT_BASE_URL=$VITE_SIMPLE_AGENT_BASE_URL
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

@@ -24,6 +24,12 @@
 		reverse_proxy agent-service:8001
 	}
 
+	@simpleAgentApi path /simple-agent/*
+	handle @simpleAgentApi {
+		uri strip_prefix /simple-agent
+		reverse_proxy simple-agent-service:8002
+	}
+
 	@api path /api/*
 	handle @api {
 		uri strip_prefix /api

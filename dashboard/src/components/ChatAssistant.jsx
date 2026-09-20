@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { getAgentRun, startAgentRun } from "../api";
-import { isExitIntent, routeMessage, SUGGESTIONS } from "../utils/assistant";
+import { getSimpleAgentRun, startSimpleAgentRun } from "../api";
+import { isExitIntent, routeMessage, AGENTS } from "../utils/assistant";
 import Markdown from "./Markdown";
 
 const STORAGE_KEY = "agentops-chat-history";
@@ -31,7 +31,6 @@ function initialWidth() {
   );
 }
 
-
 function loadHistory() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -44,7 +43,6 @@ function loadHistory() {
     return [];
   }
 }
-
 
 function formatAgentResponse(resp) {
   if (resp == null) {
@@ -59,8 +57,11 @@ function formatAgentResponse(resp) {
   return JSON.stringify(resp, null, 2);
 }
 
-
-function ChatAssistant({ onSelectTrace }) {
+function ChatAssistant({
+  onSelectTrace,
+  selectedAgentId,
+  suggestedTask,
+}) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState(loadHistory);
   const [input, setInput] = useState("");
@@ -77,10 +78,11 @@ function ChatAssistant({ onSelectTrace }) {
   const [awaitingClarification, setAwaitingClarification] = useState(false);
 
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
   const pollRef = useRef(null);
   const activeRunRef = useRef(null);
   const timersRef = useRef([]);
-
+  const lastSuggestedRef = useRef(null);
 
   // Persist history across reloads (per-browser).
   useEffect(() => {
@@ -97,6 +99,22 @@ function ChatAssistant({ onSelectTrace }) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, typing, open]);
+
+  // When the playground sends a suggested task, put it in the input and open
+  // the chat so the user can review/edit before sending.
+  useEffect(() => {
+    if (!suggestedTask || suggestedTask === lastSuggestedRef.current) {
+      return;
+    }
+    lastSuggestedRef.current = suggestedTask;
+    setInput(suggestedTask);
+    setOpen(true);
+    // Focus the textarea after the panel opens.
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+  }, [suggestedTask]);
 
   // Clean up timers/polling on unmount.
   useEffect(() => {
@@ -137,7 +155,6 @@ function ChatAssistant({ onSelectTrace }) {
     };
   }, [dragging]);
 
-
   function pushUser(text) {
     setMessages((prev) => [
       ...prev,
@@ -152,16 +169,14 @@ function ChatAssistant({ onSelectTrace }) {
     ]);
   }
 
-
   function clearRunState() {
     setCurrentTask(null);
     setClarifications([]);
     setAwaitingClarification(false);
   }
 
-
   // Start (or continue, with clarifications) an agent run and poll it.
-  function runAgentTask(task, clarificationsList) {
+  function runAgentTask(task, clarificationsList, agentId = selectedAgentId) {
     // Supersede any in-flight poll.
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -172,8 +187,11 @@ function ChatAssistant({ onSelectTrace }) {
     setTyping(true);
     setTypingCaption("Running the agent…");
 
+    const startRun = () => startSimpleAgentRun(agentId, task, clarificationsList);
+    const getRun = getSimpleAgentRun;
+
     let runId;
-    startAgentRun(task, clarificationsList)
+    startRun()
       .then((started) => {
         runId = started.run_id;
         activeRunRef.current = runId;
@@ -183,7 +201,7 @@ function ChatAssistant({ onSelectTrace }) {
             return; // superseded or cancelled
           }
           try {
-            const data = await getAgentRun(runId);
+            const data = await getRun(runId);
             if (runId !== activeRunRef.current) {
               return;
             }
@@ -247,7 +265,6 @@ function ChatAssistant({ onSelectTrace }) {
       });
   }
 
-
   function send(rawText) {
     const text = (rawText || "").trim();
     if (!text || typing) {
@@ -266,7 +283,7 @@ function ChatAssistant({ onSelectTrace }) {
         const t = setTimeout(() => {
           setTyping(false);
           pushAssistant(
-            "Okay, cancelled. What would you like to do? You can give me a new GitHub task or ask about the dashboard.",
+            "Okay, cancelled. What would you like to do? You can give me a new task or ask about the dashboard.",
           );
         }, SCRIPTED_DELAY);
         timersRef.current.push(t);
@@ -279,13 +296,13 @@ function ChatAssistant({ onSelectTrace }) {
       return;
     }
 
-    const route = routeMessage(text, messages);
+    const route = routeMessage(text, selectedAgentId, messages);
     if (!route) {
       return;
     }
 
     if (route.type === "agent") {
-      runAgentTask(route.task, []);
+      runAgentTask(route.task, [], selectedAgentId);
       return;
     }
 
@@ -298,7 +315,6 @@ function ChatAssistant({ onSelectTrace }) {
     }, SCRIPTED_DELAY);
     timersRef.current.push(t);
   }
-
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -331,6 +347,7 @@ function ChatAssistant({ onSelectTrace }) {
     }
   }
 
+  const selectedAgent = AGENTS.find((a) => a.id === selectedAgentId) ?? AGENTS[0];
 
   return (
     <div className="chat-assistant">
@@ -354,9 +371,9 @@ function ChatAssistant({ onSelectTrace }) {
 
           <div className="chat-header">
             <div className="chat-header-titles">
-              <span className="chat-title">github-agent</span>
+              <span className="chat-title">Agent playground</span>
               <span className="chat-subtitle">
-                Chat interface · runs the agent
+                Chat · {selectedAgent?.label ?? "Agent"}
               </span>
             </div>
             <div className="chat-header-actions">
@@ -386,22 +403,10 @@ function ChatAssistant({ onSelectTrace }) {
             {messages.length === 0 && (
               <div className="chat-empty">
                 <p>
-                  Hi! 👋 I'm the chat interface to the github-agent. Give me a
-                  GitHub task and I'll run it and show you the result — or ask
-                  about the dashboard. Try one of these:
+                  Hi! 👋 Send me a task for the <strong>{selectedAgent?.label}</strong> agent
+                  and I'll run it and show you the result — with a link to the
+                  full AgentOps trace.
                 </p>
-                <div className="chat-suggestions">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      type="button"
-                      key={s}
-                      className="chat-suggestion"
-                      onClick={() => send(s)}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 
@@ -451,6 +456,7 @@ function ChatAssistant({ onSelectTrace }) {
 
           <form className="chat-input-row" onSubmit={handleSubmit}>
             <textarea
+              ref={inputRef}
               className="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -458,7 +464,7 @@ function ChatAssistant({ onSelectTrace }) {
               placeholder={
                 awaitingClarification
                   ? "Answer the agent's question…"
-                  : "Give the agent a task, or ask about the dashboard…"
+                  : `Give the ${selectedAgent?.label ?? "agent"} a task…`
               }
               rows={1}
               aria-label="Message"
@@ -476,19 +482,27 @@ function ChatAssistant({ onSelectTrace }) {
       )}
 
       {!open && (
-        <button
-          type="button"
-          className="chat-fab"
-          onClick={() => setOpen(true)}
-          aria-label="Open assistant"
-          title="Chat with the github-agent"
-        >
-          💬
-        </button>
+        <div className="chat-open-wrap">
+          <button
+            type="button"
+            className="chat-open-pill"
+            onClick={() => setOpen(true)}
+            aria-label="Open assistant"
+            title="Chat with the agent"
+          >
+            <span className="chat-open-dot" aria-hidden="true" />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />
+            </svg>
+            <span className="chat-open-label">Chat</span>
+          </button>
+          <p className="chat-open-hint">
+            Select an agent above, then send a task here.
+          </p>
+        </div>
       )}
     </div>
   );
 }
-
 
 export default ChatAssistant;

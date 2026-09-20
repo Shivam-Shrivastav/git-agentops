@@ -1,8 +1,11 @@
-*.DS_Store
-*.env
-*.env
+.DS_Store
 .env
-**/.env     
+*.env
+**/.env
+
+# Claude Code local session data (plans, settings)
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]

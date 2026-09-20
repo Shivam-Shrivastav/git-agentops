@@ -1,13 +1,65 @@
-// Routing brain for the chat interface to the github-agent.
+// Routing brain for the chat interface and agent playground.
 //
-// Each user message is classified into one of:
-//   { type: "scripted",    reply }  — greetings/help/thanks/bye/dashboard tour
-//   { type: "agent",       task }   — a GitHub task -> trigger the agent
-//   { type: "out_of_scope",reply }  — politely deflect + state capabilities
-//
-// Deterministic (no LLM) so it's instant, free, and won't 500 mid-demo. The
-// agent itself is only invoked for real tasks. Swap `routeMessage` for an
-// LLM router later without touching the UI.
+// The dashboard now shows a left sidebar + agent tiles. The chat panel no
+// longer has an agent selector; it always uses the agent selected in the
+// playground. This file keeps the static agent catalog, starter questions,
+// and the simple message router.
+
+// Catalog of lightweight, privacy-safe agents shown as tiles in the playground.
+// The chat panel and playground both read from this list.
+export const AGENTS = [
+  {
+    id: "trip-planner-agent",
+    label: "Trip Planner",
+    description:
+      "Reasons over weather forecasts, web search, and budget to build a day-by-day itinerary.",
+    placeholder:
+      "Plan a 3-day trip to Tokyo with a $1500 budget. I like museums, food, and day trips.",
+    actions: ["Open-Meteo weather forecast", "DuckDuckGo activities search"],
+  },
+  {
+    id: "trade-signal-agent",
+    label: "Paper Trade Signal",
+    description:
+      "Fetches market data and news, then reasons to a buy/sell/hold signal with position sizing.",
+    placeholder: "Should I buy, sell, or hold BTC right now?",
+    actions: ["CoinGecko price", "Alpha Vantage / CryptoCompare price fallback", "DuckDuckGo news search"],
+  },
+  {
+    id: "local-researcher-agent",
+    label: "Local Researcher",
+    description:
+      "Searches the live web with DuckDuckGo, reads pages via r.jina.ai, and writes a cited markdown report.",
+    placeholder: "Research local AI observability with r.jina.ai and summarize",
+    actions: ["DuckDuckGo web search", "r.jina.ai page reader"],
+  },
+  {
+    id: "json-wrangler-agent",
+    label: "JSON Wrangler",
+    description:
+      "Validates and pretty-prints messy JSON. If the input isn't valid JSON, it extracts structure first.",
+    placeholder:
+      'Format this JSON: {"name":"AgentOps","features":["traces","spans","alerts"]}',
+    actions: ["Native JSON parser", "LLM structure extraction"],
+  },
+  {
+    id: "diff-summarizer-agent",
+    label: "Diff Summarizer",
+    description:
+      "Compares two text blocks with a real unified diff and summarizes the changes in plain English.",
+    placeholder:
+      "Summarize the difference between these two code blocks:\n\ndef old(x):\n    return x * 2\n\n---\n\ndef new(x):\n    return x * 2 + 1",
+    actions: ["Unified diff computation", "LLM summarization"],
+  },
+  {
+    id: "share-page-agent",
+    label: "Share This Page",
+    description:
+      "Fetches a URL, summarizes it, shortens the link, and generates a scannable QR code.",
+    placeholder: "Share this page: https://en.wikipedia.org/wiki/AgentOps",
+    actions: ["URL fetch / r.jina.ai reader", "is.gd link shortener", "QR code generation"],
+  },
+];
 
 const GREETING_RE =
   /\b(hi+|hello+|hey+|yo+|hiya|hola|namaste|good (morning|afternoon|evening))\b/;
@@ -17,51 +69,29 @@ const HELP_RE =
   /\b(help|what can you do|who are you|what do you do|your (name|purpose)|what are you)\b/;
 const EXIT_RE = /\b(cancel|never ?mind|stop|exit|quit|abort|forget it)\b/;
 
-// A message is an agent task if it names a repo path (owner/repo) OR pairs an
-// action verb with a GitHub noun. This keeps general chatter / knowledge
-// questions from burning a (slow, flaky) agent run.
-const REPO_PATH_RE = /[\w.-]+\/[\w.-]+/;
-const ACTION_RE =
-  /\b(list|find|search|summarize|show|get|fetch|create|open|close|comment|read|write|look ?up|tell me)\b/;
-const AGENT_WORDS = [
-  "issue",
-  "repo",
-  "pull request",
-  "pullrequest",
-  "release",
-  "branch",
-  "commit",
-  "milestone",
-  "repository",
-];
-
-const AGENT_INTRO =
-  "Send me a GitHub task — e.g. \"list open issues in Shivam-Shrivastav/Data-Structures\" or \"summarize the latest release of owner/repo\" — and I'll run the github-agent and show you its answer, with a link to the full trace.";
+const SIMPLE_AGENT_INTRO =
+  "Pick an agent in the playground, give it a task, and I'll run it and show you the result — with a link to the full AgentOps trace. These agents use only public data and need no extra auth.";
 
 const TOUR_INTRO =
-  "I can also tour the dashboard — ask about traces, the decision-quality (LLM-judge) eval, alerts, token usage/cost, or how this is all hosted.";
+  "I can also tour the dashboard — ask about traces, the decision-quality eval, alerts, token usage/cost, or how this is all hosted.";
 
 function greetingReply() {
-  return "Hi! 👋 I'm the chat interface to the github-agent. " +
-    AGENT_INTRO +
-    " " +
-    TOUR_INTRO +
-    " What would you like to do?";
+  return `Hi. I'm the chat interface to the agents. ${SIMPLE_AGENT_INTRO} ${TOUR_INTRO} What would you like to do?`;
 }
 
 function helpReply() {
-  return "I do two things:\n1) Run GitHub tasks via the github-agent — " +
-    AGENT_INTRO.replace("Send me a GitHub task — e.g. ", "").replace(
-      " — and I'll run the github-agent and show you its answer, with a link to the full trace.",
+  const agentIntro =
+    "Run lightweight, public-data agents (trip planner, web researcher, JSON wrangler, diff summarizer, share page, paper trade signal) — " +
+    SIMPLE_AGENT_INTRO.replace("Pick an agent in the playground, give it a task, and ", "").replace(
+      " — with a link to the full AgentOps trace.",
       "",
-    ) +
-    ".\n2) " +
-    TOUR_INTRO.charAt(0).toLowerCase() +
-    TOUR_INTRO.slice(1);
+    );
+
+  return `I do two things:\n1) ${agentIntro}.\n2) ${TOUR_INTRO.charAt(0).toLowerCase()}${TOUR_INTRO.slice(1)}.`;
 }
 
 function outOfScopeReply() {
-  return "I can't help with that — I'm scoped to two things:\n1) Running GitHub tasks via the agent (e.g. \"list open issues in owner/repo\", \"summarize the latest release of owner/repo\").\n2) Explaining this dashboard (traces, the decision-quality eval, alerts, token usage, hosting).\nCould you rephrase, or pick one of those?";
+  return `I can't help with that — I'm scoped to two things:\n1) Running tasks for the selected agent using public data.\n2) Explaining this dashboard (traces, the decision-quality eval, alerts, token usage, hosting).\nCould you rephrase, or pick one of those?`;
 }
 
 // Dashboard-tour intents — scripted answers about THIS project.
@@ -80,7 +110,7 @@ const DASHBOARD_INTENTS = [
       "how do i trigger",
     ],
     reply:
-      "Just type a GitHub task right here in this chat — e.g. \"list open issues in Shivam-Shrivastav/Data-Structures\" — and I'll run the github-agent and reply with its result, plus a \"View trace\" link to the full observability trace. If it needs more info, I'll ask you a follow-up.",
+      "Just type a task right here in this chat — the agent selected in the playground will run it. I'll reply with the result and a \"View trace\" link to the full observability trace.",
   },
   {
     keys: [
@@ -94,7 +124,7 @@ const DASHBOARD_INTENTS = [
       "what am i looking at",
     ],
     reply:
-      "This is AgentOps — an observability platform for LLM agents. A LangGraph GitHub-agent emits trace/span events over HTTP to a FastAPI ingestion API (Postgres + Redis), and this dashboard turns them into traces, spans, LLM-decision timelines, token usage, failure analytics, and an LLM-judge decision-quality eval.",
+      "This is AgentOps — an observability platform for LLM agents. Instrumented agents emit trace/span events over HTTP to a FastAPI ingestion API (Postgres + Redis), and this dashboard turns them into traces, spans, LLM-decision timelines, token usage, failure analytics, and an LLM-judge decision-quality eval.",
   },
   {
     keys: ["trace", "span", "observability", "timeline", "execution", "tree"],
@@ -124,7 +154,7 @@ const DASHBOARD_INTENTS = [
   {
     keys: ["model", "openrouter", "which model", "llm model", "free model"],
     reply:
-      "The agent uses OpenRouter's free model by default (configurable via OPENROUTER_MODEL). The Model breakdown section breaks down calls, tokens, and cost per model so you can compare.",
+      "Agents use a configurable OpenAI-compatible endpoint. The simple agents default to a local Ollama model, while the github-agent targets OpenRouter. The Model breakdown section breaks down calls, tokens, and cost per model so you can compare.",
   },
   {
     keys: ["failure", "error", "fail", "crash", "failed", "bug"],
@@ -146,18 +176,22 @@ const DASHBOARD_INTENTS = [
       "public",
     ],
     reply:
-      "The whole stack runs in Docker Compose on a home machine and is exposed publicly through a Cloudflare Tunnel — outbound-only, no public IP or open ports, HTTPS terminates at Cloudflare's edge, and Caddy reverse-proxies /api, /agent, and the dashboard with HTTP basic auth. The same compose deploys to a VPS unchanged.",
+      "The whole stack runs in Docker Compose on a home machine and is exposed publicly through a Cloudflare Tunnel — outbound-only, no public IP or open ports, HTTPS terminates at Cloudflare's edge, and Caddy reverse-proxies /api, /agent, /simple-agent, and the dashboard with HTTP basic auth. The same compose deploys to a VPS unchanged.",
   },
   {
     keys: [
-      "github",
-      "what does the agent do",
-      "github-agent",
-      "what can the agent do",
-      "agent do",
+      "simple agents",
+      "simple-agent",
+      "playground agents",
+      "trip planner",
+      "researcher agent",
+      "json agent",
+      "diff agent",
+      "share page agent",
+      "trade signal agent",
     ],
     reply:
-      "The github-agent is a LangGraph agent that works with GitHub — e.g. \"list open issues in owner/repo\". It's wrapped as an HTTP service (POST /agent/run) and instrumented with the AgentOps SDK so every run is captured as a trace. Just type a task in this chat and I'll run it.",
+      "The simple agents are lightweight, privacy-safe agents in the Playground: Trip Planner, Local Researcher, JSON Wrangler, Diff Summarizer, Share This Page, and Paper Trade Signal. They use only public data, need no extra auth, and each run is fully traced by AgentOps.",
   },
 ];
 
@@ -169,15 +203,7 @@ function normalize(text) {
     .trim();
 }
 
-function isAgentTask(n) {
-  if (REPO_PATH_RE.test(n)) {
-    return true;
-  }
-  return ACTION_RE.test(n) && AGENT_WORDS.some((w) => n.includes(w));
-}
-
-
-export function routeMessage(message, _history = []) {
+export function routeMessage(message, selectedAgent, _history = []) {
   const text = (message || "").trim();
   if (!text) {
     return null;
@@ -193,44 +219,42 @@ export function routeMessage(message, _history = []) {
     return {
       type: "scripted",
       reply:
-        "You're welcome! Want to give the agent a task, or take a tour of the dashboard?",
+        "You're welcome. Want to give the agent a task, or take a tour of the dashboard?",
     };
   }
   if (BYE_RE.test(n) && wordCount <= 4) {
-    return { type: "scripted", reply: "Goodbye! Come back and send a task anytime. 👋" };
+    return { type: "scripted", reply: "Goodbye. Come back and send a task anytime." };
   }
   if (HELP_RE.test(n)) {
     return { type: "scripted", reply: helpReply() };
   }
 
-  // Agent task takes precedence over a dashboard-tour match when the message
-  // is an actionable GitHub request (e.g. "list open issues in owner/repo").
-  if (isAgentTask(n)) {
-    return { type: "agent", task: text };
-  }
-
-  // Dashboard-tour scripted answers.
-  let best = null;
-  let bestScore = 0;
-  for (const intent of DASHBOARD_INTENTS) {
-    let score = 0;
-    for (const key of intent.keys) {
-      if (n.includes(key)) {
-        score += 1;
+  // Dashboard-tour scripted answers only when no agent is selected.
+  // Otherwise the user's message is assumed to be a task for the active agent,
+  // even if it contains words like "budget", "cost", or "tokens".
+  if (!selectedAgent) {
+    let best = null;
+    let bestScore = 0;
+    for (const intent of DASHBOARD_INTENTS) {
+      let score = 0;
+      for (const key of intent.keys) {
+        if (n.includes(key)) {
+          score += 1;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = intent;
       }
     }
-    if (score > bestScore) {
-      bestScore = score;
-      best = intent;
+    if (best) {
+      return { type: "scripted", reply: best.reply };
     }
   }
-  if (best) {
-    return { type: "scripted", reply: best.reply };
-  }
 
-  return { type: "out_of_scope", reply: outOfScopeReply() };
+  // Treat any remaining message as a task for the selected agent.
+  return { type: "agent", task: text };
 }
-
 
 // True for messages that should abort a pending clarification round instead
 // of being fed to the agent as an answer.
@@ -240,11 +264,44 @@ export function isExitIntent(message) {
   return EXIT_RE.test(n) || (wordCount <= 4 && GREETING_RE.test(n));
 }
 
+// Suggested starter tasks grouped by agent. Shown as chips in the agent detail
+// panel; clicking one sends it straight to the chat input.
+export const SUGGESTIONS = {
+  "trip-planner-agent": [
+    "Plan a 3-day trip to Tokyo with a $1500 budget. I like museums, food, and day trips.",
+    "Long weekend in Paris, budget $800, interested in art and cafes",
+    "Week in Bali for two people, $2500 budget, beach and hiking",
+  ],
+  "local-researcher-agent": [
+    "Research LangChain vs LangGraph and give me a cited comparison",
+    "Research local AI observability with r.jina.ai and summarize",
+    "What are the latest trends in AI coding assistants?",
+  ],
+  "json-wrangler-agent": [
+    'Format this JSON: {"name":"AgentOps","features":["traces","spans","alerts"]}',
+    'Validate and pretty-print: [{"id":1,"ok":true},{"id":2,"ok":false}]',
+    "Fix this messy JSON: {name: AgentOps, version: 0.1.0}",
+  ],
+  "diff-summarizer-agent": [
+    "Summarize the difference between these two code blocks:\n\ndef old(x):\n    return x * 2\n\n---\n\ndef new(x):\n    return x * 2 + 1",
+    "Compare these two paragraphs and summarize what changed.\n\nOLD: The cat sat on the mat.\n\nNEW: The cat slept on the warm mat near the window.",
+    "Show me the diff between these two config files:\n\nenabled: true\n\n---\n\nenabled: false\ndebug: true",
+  ],
+  "share-page-agent": [
+    "Share this page: https://en.wikipedia.org/wiki/AgentOps",
+    "Summarize https://example.com and give me a short link + QR code",
+    "Share this page: https://news.ycombinator.com",
+  ],
+  "trade-signal-agent": [
+    "Should I buy, sell, or hold BTC right now?",
+    "Paper trade signal for ETH with moderate risk",
+    "Bullish or bearish on NVDA? Explain your reasoning",
+  ],
+};
 
-// Starter prompts shown as chips when the conversation is empty.
-export const SUGGESTIONS = [
-  "List open issues in Shivam-Shrivastav/Data-Structures",
+// Generic dashboard-tour chips shown alongside agent-specific suggestions.
+export const GENERIC_SUGGESTIONS = [
   "What can you do?",
-  "What is the decision-quality eval?",
+  "What is this dashboard?",
   "How is this hosted?",
 ];

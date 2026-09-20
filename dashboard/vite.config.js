@@ -9,6 +9,14 @@ export default defineConfig({
   // 403s any non-localhost Host by default; allow all hosts so the reverse
   // proxy (and any future public hostname) works. Caddy's basic_auth still
   // gates access — this only relaxes the Host check.
-  server: { allowedHosts: true },
+  server: {
+    allowedHosts: true,
+    // Proxy same-origin agent mounts to the local HTTP services so the
+    // dashboard chat UI works out of the box in dev (no Caddy required).
+    proxy: {
+      "/agent": { target: "http://localhost:8001", changeOrigin: true },
+      "/simple-agent": { target: "http://localhost:8002", changeOrigin: true },
+    },
+  },
   preview: { allowedHosts: true },
 })

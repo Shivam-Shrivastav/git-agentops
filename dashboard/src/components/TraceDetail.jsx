@@ -5,7 +5,6 @@ import SpanInspector from "./SpanInspector";
 import ErrorInspector from "./ErrorInspector";
 import ExecutionTimeline from "./ExecutionTimeline";
 import DecisionTimeline from "./DecisionTimeline";
-import DecisionQuality from "./DecisionQuality";
 import { flattenTimeline } from "../utils/timeline";
 
 
@@ -52,7 +51,6 @@ function TraceDetail({ data,
     usage,
     error,
     decisions,
-    quality,
     onBack, }) {
     const { trace, children } = data;
 
@@ -270,10 +268,6 @@ function TraceDetail({ data,
             )}
 
             <DecisionTimeline decisions={decisions} />
-
-            {quality && quality.evaluated && (
-                <DecisionQuality quality={quality} />
-            )}
 
             <ErrorInspector error={error} />
 

@@ -148,48 +148,45 @@ class AgentOps:
 
             self.context.end_span()
 
-    # @contextmanager
-    # def span(
-    #     self,
-    #     name: str,
-    #     payload: dict[str, Any] | None = None,
-    # ):
+    @contextmanager
+    def span(
+        self,
+        name: str,
+        payload: dict[str, Any] | None = None,
+    ):
+        """Generic span for grouping operations under a parent node."""
 
-    #     span = self.context.start_span(name)
+        span = self.context.start_span(name)
 
-    #     self._emit(
-    #         EventType.SPAN_START,
-    #         span,
-    #         payload=payload,
-    #     )
+        self._emit(
+            EventType.SPAN_START,
+            span,
+            payload=payload,
+        )
 
-    #     try:
-    #         yield
+        try:
+            yield
+            status = "success"
 
-    #         status = "success"
+        except Exception:
+            status = "error"
+            raise
 
-    #     except Exception:
+        finally:
+            duration = round(
+                (time.perf_counter() - span.start_time) * 1000,
+                3,
+            )
 
-    #         status = "error"
-    #         raise
+            self._emit(
+                EventType.SPAN_END,
+                span,
+                status=status,
+                duration_ms=duration,
+                payload=payload,
+            )
 
-    #     finally:
-
-    #         duration = (
-    #             time.perf_counter()
-    #             - span.start_time
-    #         ) * 1000
-
-    #         self._emit(
-    #             EventType.SPAN_END,
-    #             span,
-    #             status=status,
-    #             duration_ms=duration,
-    #         )
-
-    #         self.context.end_span()
-
-
+            self.context.end_span()
 
 
     @contextmanager

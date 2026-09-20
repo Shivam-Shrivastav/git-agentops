@@ -3,13 +3,14 @@
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Brings up PostgreSQL + Redis + ingestion-api + worker + dashboard +
-# agent-service + Caddy. Only Caddy is exposed to the host (80/443); the
-# API, dashboard, and agent-service are reachable only through Caddy over
-# the internal compose network. Caddy terminates TLS (auto Let's Encrypt
-# for $DOMAIN) and gates everything with HTTP basic auth.
+# agent-service + simple-agent-service + Caddy. Only Caddy is exposed to
+# the host (80/443); the API, dashboard, and agent services are reachable
+# only through Caddy over the internal compose network. Caddy terminates
+# TLS (auto Let's Encrypt for $DOMAIN) and gates everything with HTTP basic
+# auth.
 #
 # Required env (see .env, copied from .env.prod.example):
-#   DOMAIN, AUTH_USER, AUTH_HASH, GITHUB_TOKEN, OPENROUTER_API_KEY
+#   DOMAIN, AUTH_USER, AUTH_HASH, OPENROUTER_API_KEY, GITHUB_TOKEN
 #
 # Keep docker-compose.yml for local dev (no Caddy, host ports mapped).
 #
@@ -24,7 +25,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: agentops
-      POSTGRES_PASSWORD: agentops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentops}
       POSTGRES_DB: agentops
     volumes:
       - agentops-db:/var/lib/postgresql/data
@@ -48,7 +49,7 @@ services:
     build: ./ingestion-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      DATABASE_URL: postgresql://agentops:${POSTGRES_PASSWORD:-agentops}@db:5432/agentops
       REDIS_URL: redis://redis:6379/0
     # No host port: only Caddy reaches it over the compose network.
     depends_on:
@@ -61,7 +62,7 @@ services:
     build: ./worker
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://agentops:agentops@db:5432/agentops
+      DATABASE_URL: postgresql://agentops:${POSTGRES_PASSWORD:-agentops}@db:5432/agentops
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
@@ -77,6 +78,8 @@ services:
         VITE_API_BASE_URL: /api
         # Same-origin agent mount; Caddy proxies /agent/* -> agent-service.
         VITE_AGENT_BASE_URL: /agent
+        # Same-origin simple-agent mount; Caddy proxies /simple-agent/* -> simple-agent-service.
+        VITE_SIMPLE_AGENT_BASE_URL: /simple-agent
     restart: unless-stopped
     # No host port: only Caddy reaches it.
     depends_on:
@@ -96,6 +99,23 @@ services:
       AGENT_DECISION_JUDGE: "1"
       AGENT_MAX_TOTAL_TOKENS: "40000"
       AGENT_MAX_STEPS: "6"
+    depends_on:
+      ingestion-api:
+        condition: service_started
+
+  simple-agent-service:
+    build:
+      context: .
+      dockerfile: simple-agents/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Emit over the internal network, not through Caddy (no auth needed).
+      AGENTOPS_ENDPOINT: http://ingestion-api:8000/events
+      # Decision-quality LLM-judge (1 = enabled).
+      AGENT_DECISION_JUDGE: "1"
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
     depends_on:
       ingestion-api:
         condition: service_started
@@ -121,6 +141,7 @@ services:
       - ingestion-api
       - dashboard
       - agent-service
+      - simple-agent-service
 
 volumes:
   agentops-db:
