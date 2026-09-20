@@ -271,7 +271,7 @@ function TraceDetail({ data,
 
             <DecisionTimeline decisions={decisions} />
 
-            {quality && quality.evaluated && (
+            {quality && (
                 <DecisionQuality quality={quality} />
             )}
 
